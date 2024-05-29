@@ -1,29 +1,85 @@
-#[allow(unused_imports)]
-use std::io::{self, Write};
+use std::{
+    error,
+    io::{self, Write},
+    process,
+};
 
-fn main() {
-    let mut input = String::new();
+use thiserror::Error;
 
-    loop {
-        print!("$ ");
-        io::stdout().flush().unwrap();
+enum Cmd {
+    Exit(i32),
+}
 
-        let cmd = read(&mut input);
+#[derive(Debug, Error)]
+enum AppError {
+    #[error("command not found")]
+    CmdNotFound,
+    #[error("{0}")]
+    BadArg(&'static str),
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
 
-        if let Err(e) = eval(cmd) {
-            println!("{}", e);
+impl TryFrom<&str> for Cmd {
+    type Error = AppError;
+
+    fn try_from(input: &str) -> Result<Self, Self::Error> {
+        use AppError::BadArg;
+
+        let mut parts = input.split_whitespace();
+
+        match parts.next().unwrap() {
+            "exit" => {
+                let code = parts
+                    .next()
+                    .ok_or(BadArg("exit code is required"))?
+                    .parse()
+                    .map_err(|_| BadArg("failed to parse exit code"))?;
+
+                let cmd = Cmd::Exit(code);
+
+                Ok(cmd)
+            }
+            _ => Err(AppError::CmdNotFound),
         }
     }
 }
 
-fn read(input: &mut String) -> &str {
-    let stdin = io::stdin();
-
-    stdin.read_line(input).unwrap();
-
-    input.trim_end()
+fn main() {
+    if let Err(e) = run() {
+        println!("fatal error: {}", e);
+    }
 }
 
-fn eval(cmd: &str) -> Result<String, Box<dyn std::error::Error>> {
-    Err(format!("{}: command not found", cmd).into())
+fn run() -> Result<(), Box<dyn error::Error>> {
+    let mut buf = String::new();
+
+    loop {
+        // promt
+        print!("$ ");
+        io::stdout().flush()?;
+
+        // read
+        buf.clear();
+        io::stdin().read_line(&mut buf)?;
+
+        // parse
+        let input = buf.trim_end();
+        let cmd = match input.try_into() {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                if let AppError::CmdNotFound = e {
+                    println!("{}: {}", input, e);
+                    continue;
+                }
+
+                return Err(e.into());
+            }
+        };
+
+        // eval
+        match cmd {
+            Cmd::Exit(code) => process::exit(code),
+        }
+    }
 }
