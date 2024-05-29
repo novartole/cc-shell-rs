@@ -9,6 +9,7 @@ use thiserror::Error;
 enum Cmd<'input> {
     Exit(i32),
     Echo(&'input str),
+    Type(&'input str),
 }
 
 #[derive(Debug, Error)]
@@ -28,16 +29,19 @@ impl<'input> TryFrom<&'input str> for Cmd<'input> {
         use AppError::BadArg;
 
         let cmd = if let Some(arg) = input.strip_prefix("exit ").map(str::trim) {
-            let code = if arg.is_empty() {
+            if arg.is_empty() {
                 return Err(BadArg("exit code is required"));
-            } else {
-                arg.parse()
-                    .map_err(|_| BadArg("failed to parse exit code"))?
-            };
+            }
+
+            let code = arg
+                .parse()
+                .map_err(|_| BadArg("failed to parse exit code"))?;
 
             Cmd::Exit(code)
         } else if let Some(msg) = input.strip_prefix("echo ") {
             Cmd::Echo(msg)
+        } else if let Some(cmd) = input.strip_prefix("type ").map(str::trim) {
+            Cmd::Type(cmd)
         } else {
             return Err(AppError::CmdNotFound);
         };
@@ -82,6 +86,15 @@ fn run() -> Result<(), Box<dyn error::Error>> {
         match cmd {
             Cmd::Exit(code) => process::exit(code),
             Cmd::Echo(msg) => println!("{}", msg),
+            Cmd::Type(cmd) => println!(
+                "{} {}",
+                cmd,
+                if matches!(cmd, "exit" | "echo" | "type") {
+                    "is a shell builtin"
+                } else {
+                    "not found"
+                }
+            ),
         }
     }
 }
