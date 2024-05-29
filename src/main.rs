@@ -6,8 +6,9 @@ use std::{
 
 use thiserror::Error;
 
-enum Cmd {
+enum Cmd<'input> {
     Exit(i32),
+    Echo(&'input str),
 }
 
 #[derive(Debug, Error)]
@@ -20,28 +21,28 @@ enum AppError {
     Io(#[from] io::Error),
 }
 
-impl TryFrom<&str> for Cmd {
+impl<'input> TryFrom<&'input str> for Cmd<'input> {
     type Error = AppError;
 
-    fn try_from(input: &str) -> Result<Self, Self::Error> {
+    fn try_from(input: &'input str) -> Result<Self, Self::Error> {
         use AppError::BadArg;
 
-        let mut parts = input.split_whitespace();
+        let cmd = if let Some(arg) = input.strip_prefix("exit ").map(str::trim) {
+            let code = if arg.is_empty() {
+                return Err(BadArg("exit code is required"));
+            } else {
+                arg.parse()
+                    .map_err(|_| BadArg("failed to parse exit code"))?
+            };
 
-        match parts.next().unwrap() {
-            "exit" => {
-                let code = parts
-                    .next()
-                    .ok_or(BadArg("exit code is required"))?
-                    .parse()
-                    .map_err(|_| BadArg("failed to parse exit code"))?;
+            Cmd::Exit(code)
+        } else if let Some(msg) = input.strip_prefix("echo ") {
+            Cmd::Echo(msg)
+        } else {
+            return Err(AppError::CmdNotFound);
+        };
 
-                let cmd = Cmd::Exit(code);
-
-                Ok(cmd)
-            }
-            _ => Err(AppError::CmdNotFound),
-        }
+        Ok(cmd)
     }
 }
 
@@ -80,6 +81,7 @@ fn run() -> Result<(), Box<dyn error::Error>> {
         // eval
         match cmd {
             Cmd::Exit(code) => process::exit(code),
+            Cmd::Echo(msg) => println!("{}", msg),
         }
     }
 }
