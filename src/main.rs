@@ -1,5 +1,5 @@
 use std::{
-    error,
+    env, error, fs,
     io::{self, Write},
     process,
 };
@@ -26,27 +26,37 @@ impl<'input> TryFrom<&'input str> for Cmd<'input> {
     type Error = AppError;
 
     fn try_from(input: &'input str) -> Result<Self, Self::Error> {
-        use AppError::BadArg;
+        use AppError::{BadArg, CmdNotFound};
 
-        let cmd = if let Some(arg) = input.strip_prefix("exit ").map(str::trim) {
-            if arg.is_empty() {
-                return Err(BadArg("exit code is required"));
+        match input.split_once(' ') {
+            Some((cmd, args)) => {
+                let cmd = match cmd {
+                    "exit" => {
+                        let arg = args.trim();
+
+                        if arg.is_empty() {
+                            return Err(BadArg("exit code is required"));
+                        }
+
+                        let code = arg
+                            .parse()
+                            .map_err(|_| BadArg("failed to parse exit code"))?;
+
+                        Cmd::Exit(code)
+                    }
+                    "echo" => Cmd::Echo(args),
+                    "type" => {
+                        let cmd = args.trim();
+
+                        Cmd::Type(cmd)
+                    }
+                    _ => return Err(CmdNotFound),
+                };
+
+                Ok(cmd)
             }
-
-            let code = arg
-                .parse()
-                .map_err(|_| BadArg("failed to parse exit code"))?;
-
-            Cmd::Exit(code)
-        } else if let Some(msg) = input.strip_prefix("echo ") {
-            Cmd::Echo(msg)
-        } else if let Some(cmd) = input.strip_prefix("type ").map(str::trim) {
-            Cmd::Type(cmd)
-        } else {
-            return Err(AppError::CmdNotFound);
-        };
-
-        Ok(cmd)
+            None => Err(CmdNotFound),
+        }
     }
 }
 
@@ -59,7 +69,7 @@ fn main() {
 fn run() -> Result<(), Box<dyn error::Error>> {
     let mut buf = String::new();
 
-    loop {
+    'repl: loop {
         // promt
         print!("$ ");
         io::stdout().flush()?;
@@ -86,15 +96,29 @@ fn run() -> Result<(), Box<dyn error::Error>> {
         match cmd {
             Cmd::Exit(code) => process::exit(code),
             Cmd::Echo(msg) => println!("{}", msg),
-            Cmd::Type(cmd) => println!(
-                "{} {}",
-                cmd,
+            Cmd::Type(cmd) => {
                 if matches!(cmd, "exit" | "echo" | "type") {
-                    "is a shell builtin"
-                } else {
-                    "not found"
+                    println!("{} is a shell builtin", cmd);
+                    continue;
                 }
-            ),
+
+                if let Ok(val) = env::var("PATH") {
+                    for dir in val.split(':') {
+                        for entry in fs::read_dir(dir)? {
+                            let entry = entry?;
+
+                            if entry.file_type().as_ref().is_ok_and(fs::FileType::is_file)
+                                && entry.file_name() == cmd
+                            {
+                                println!("{0} is {1}/{0}", cmd, dir);
+                                continue 'repl;
+                            }
+                        }
+                    }
+                }
+
+                println!("{} not found", cmd,)
+            }
         }
     }
 }
