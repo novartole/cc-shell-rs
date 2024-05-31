@@ -19,6 +19,7 @@ enum Cmd<'input> {
     Exit(i32),
     Echo(&'input str),
     Type(&'input str),
+    Pwd,
     External {
         cmd: &'input str,
         args: Option<&'input str>,
@@ -57,10 +58,16 @@ impl<'input> TryFrom<&'input str> for Cmd<'input> {
                     args: Some(args),
                 },
             },
-            None => Cmd::External {
-                cmd: input,
-                args: None,
-            },
+            None => {
+                if input == "pwd" {
+                    Cmd::Pwd
+                } else {
+                    Cmd::External {
+                        cmd: input,
+                        args: None,
+                    }
+                }
+            }
         };
 
         Ok(cmd)
@@ -94,7 +101,7 @@ fn run() -> Result<(), Box<dyn error::Error>> {
             Cmd::Exit(code) => process::exit(code),
             Cmd::Echo(msg) => println!("{}", msg),
             Cmd::Type(cmd) => {
-                if matches!(cmd, "exit" | "echo" | "type") {
+                if matches!(cmd, "exit" | "echo" | "type" | "pwd") {
                     println!("{} is a shell builtin", cmd);
                     continue;
                 }
@@ -112,6 +119,7 @@ fn run() -> Result<(), Box<dyn error::Error>> {
 
                 println!("{} not found", cmd)
             }
+            Cmd::Pwd => println!("{}", env::current_dir()?.display()),
             Cmd::External {
                 cmd,
                 args: raw_args,
