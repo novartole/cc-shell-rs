@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     env, error, fs,
     io::{self, Write},
     path, process,
@@ -127,7 +128,13 @@ fn run() -> Result<(), Box<dyn error::Error>> {
             }
             Cmd::Pwd => println!("{}", env::current_dir()?.display()),
             Cmd::Cd(path) => {
-                if let Err(e) = env::set_current_dir(path) {
+                let path = if path == "~" {
+                    env::var("HOME")?.into()
+                } else {
+                    Cow::Borrowed(path)
+                };
+
+                if let Err(e) = env::set_current_dir(path.as_ref()) {
                     if let io::ErrorKind::NotFound = e.kind() {
                         println!("{}: No such file or directory", path);
                         continue;
