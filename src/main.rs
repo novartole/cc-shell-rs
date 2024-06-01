@@ -20,6 +20,7 @@ enum Cmd<'input> {
     Echo(&'input str),
     Type(&'input str),
     Pwd,
+    Cd(&'input str),
     External {
         cmd: &'input str,
         args: Option<&'input str>,
@@ -52,6 +53,11 @@ impl<'input> TryFrom<&'input str> for Cmd<'input> {
                     let cmd = args.trim_start();
 
                     Cmd::Type(cmd)
+                }
+                "cd" => {
+                    let path = args.trim_start();
+
+                    Cmd::Cd(path)
                 }
                 cmd => Cmd::External {
                     cmd,
@@ -101,7 +107,7 @@ fn run() -> Result<(), Box<dyn error::Error>> {
             Cmd::Exit(code) => process::exit(code),
             Cmd::Echo(msg) => println!("{}", msg),
             Cmd::Type(cmd) => {
-                if matches!(cmd, "exit" | "echo" | "type" | "pwd") {
+                if matches!(cmd, "exit" | "echo" | "type" | "pwd" | "cd") {
                     println!("{} is a shell builtin", cmd);
                     continue;
                 }
@@ -120,6 +126,16 @@ fn run() -> Result<(), Box<dyn error::Error>> {
                 println!("{} not found", cmd)
             }
             Cmd::Pwd => println!("{}", env::current_dir()?.display()),
+            Cmd::Cd(path) => {
+                if let Err(e) = env::set_current_dir(path) {
+                    if let io::ErrorKind::NotFound = e.kind() {
+                        println!("{}: No such file or directory", path);
+                        continue;
+                    }
+
+                    return Err(e.into());
+                }
+            }
             Cmd::External {
                 cmd,
                 args: raw_args,
